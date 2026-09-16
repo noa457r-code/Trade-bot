@@ -1,6 +1,7 @@
-exchange: binance
-symbol: BTC/USDT
-timeframe: 1h
+broker: oanda
+environment: practice   # practice = Demo-Account (empfohlen), live = echtes Konto
+instrument: EUR_USD     # OANDA-Notation: Unterstrich statt Slash
+granularity: H1         # OANDA-Codes: M1,M5,M15,M30,H1,H4,D,W ...
 
 strategy:
   fast_ma: 20
@@ -14,7 +15,7 @@ risk:
   risk_per_trade: 0.01     # 1% des Kapitals pro Trade riskieren
   stop_loss_pct: 0.02      # 2% Stop-Loss unter Entry
   take_profit_pct: 0.04    # 4% Take-Profit ueber Entry
-  fee_pct: 0.001           # 0.1% Taker-Gebuehr pro Trade (Binance Standard)
+  fee_pct: 0.0002          # Naeherung fuer Spread-/Transaktionskosten (0.02%, typischer EUR/USD-Spread)
 
 paper_trading:
   poll_interval_seconds: 60

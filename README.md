@@ -1,25 +1,37 @@
 # Trade-bot
 
-Ein Krypto-Trading-Bot mit Backtesting und Paper-Trading. Strategie: SMA-Crossover
+Ein Forex-Trading-Bot mit Backtesting und Paper-Trading. Strategie: SMA-Crossover
 (schneller/langsamer gleitender Durchschnitt) mit RSI-Filter zur Bestätigung.
-Datenquelle: Binance-Marktdaten über [ccxt](https://github.com/ccxt/ccxt).
+Datenquelle: [OANDA](https://www.oanda.com/) REST-API (v20) über die Library
+`oandapyV20`.
 
-**Kein Live-Trading in dieser Version.** Backtests laufen auf historischen Daten,
+**Kein Live-Trading in dieser Version.** Backtests laufen auf historischen Kursen,
 Paper-Trading simuliert Trades auf Basis von Live-Kursen, ohne echte Orders zu
 platzieren oder Kapital zu riskieren.
 
 ## Setup
+
+1. Kostenlosen OANDA-Practice-(Demo-)Account anlegen: https://www.oanda.com/demo-account/
+2. API-Token erzeugen: OANDA-Account-Portal → "Manage API Access"
+3. Python-Umgebung einrichten:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
+cp .env.example .env     # OANDA_API_TOKEN eintragen
 cp config.example.yaml config.yaml
 ```
 
-`config.yaml` enthält Symbol, Timeframe, Strategie-Parameter und Risikomanagement
-(Positionsgröße pro Trade, Stop-Loss, Take-Profit, Gebühren). Werte dort anpassen.
+`config.yaml` enthält Instrument, Granularität (Kerzengröße), Strategie-Parameter
+und Risikomanagement (Positionsgröße pro Trade, Stop-Loss, Take-Profit,
+Spread-Kosten-Näherung). Werte dort anpassen.
+
+Instrumente werden in OANDA-Notation angegeben, z.B. `EUR_USD` statt `EUR/USD`.
+Gültige Granularitäten: `M1, M5, M15, M30, H1, H4, D, W` (siehe
+[OANDA-Doku](https://developer.oanda.com/rest-live-v20/instrument-df/#CandlestickGranularity)
+für alle Codes).
 
 ## Backtest ausführen
 
@@ -27,9 +39,9 @@ cp config.example.yaml config.yaml
 python -m trade_bot.cli backtest --config config.yaml --since 2023-01-01 --bars 5000 --trades
 ```
 
-Lädt historische OHLCV-Daten von Binance (öffentlich, kein API-Key nötig),
-wendet die Strategie an und gibt Performance-Kennzahlen aus:
-Anzahl Trades, Win-Rate, Gesamtrendite, Max Drawdown, Endkapital.
+Lädt historische Kursdaten von OANDA, wendet die Strategie an und gibt
+Performance-Kennzahlen aus: Anzahl Trades, Win-Rate, Gesamtrendite, Max
+Drawdown, Endkapital.
 
 ## Paper-Trading ausführen
 
@@ -39,7 +51,8 @@ python -m trade_bot.cli paper --config config.yaml
 
 Pollt in konfigurierbarem Intervall aktuelle Kursdaten, wendet dieselbe Strategie
 an und simuliert Entries/Exits inkl. Stop-Loss/Take-Profit — alles nur im
-Arbeitsspeicher, keine echten Orders.
+Arbeitsspeicher, keine echten Orders. Benötigt nur den API-Token (auch auf dem
+Practice-Environment), kein Kapital involviert.
 
 ## Strategie
 
@@ -49,6 +62,12 @@ Arbeitsspeicher, keine echten Orders.
   `rsi_sell_min` — zusätzlich greifen Stop-Loss und Take-Profit jederzeit.
 - **Positionsgröße:** so bemessen, dass ein Stop-Loss-Treffer maximal
   `risk_per_trade` des aktuellen Kapitals kostet.
+
+Hinweis: Die Positionsgrößen-Berechnung geht vereinfachend davon aus, dass die
+Kontowährung der Kurswährung des Paares entspricht (z.B. USD bei EUR/USD), und
+berücksichtigt kein Hebel-/Margin-System eines echten Forex-Brokers. Für
+Live-Trading müsste das an die jeweilige Kontowährung und Margin-Regeln des
+Brokers angepasst werden.
 
 ## Tests
 

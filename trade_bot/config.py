@@ -31,9 +31,10 @@ class PaperTradingConfig:
 
 @dataclass
 class Config:
-    exchange: str
-    symbol: str
-    timeframe: str
+    broker: str
+    environment: str
+    instrument: str
+    granularity: str
     strategy: StrategyConfig
     risk: RiskConfig
     paper_trading: PaperTradingConfig
@@ -43,9 +44,10 @@ class Config:
         with open(path, "r") as f:
             raw = yaml.safe_load(f)
         return cls(
-            exchange=raw["exchange"],
-            symbol=raw["symbol"],
-            timeframe=raw["timeframe"],
+            broker=raw["broker"],
+            environment=raw["environment"],
+            instrument=raw["instrument"],
+            granularity=raw["granularity"],
             strategy=StrategyConfig(**raw["strategy"]),
             risk=RiskConfig(**raw["risk"]),
             paper_trading=PaperTradingConfig(**raw["paper_trading"]),

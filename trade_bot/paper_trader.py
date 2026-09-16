@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 
 from trade_bot.config import Config
-from trade_bot.data import fetch_ohlcv, make_exchange
+from trade_bot.data import fetch_ohlcv, make_client
 from trade_bot.risk import size_position
 from trade_bot.strategy import generate_signals
 
@@ -23,13 +23,14 @@ class PaperPosition:
 class PaperTrader:
     """Simulates trading on live market data without placing real orders.
 
-    Safe to run continuously: no API keys and no funds are required, since
-    it only reads public OHLCV data from the exchange.
+    Safe to run continuously: only the OANDA practice API token is needed
+    (candle data is free on both practice and live environments), and no
+    real orders or funds are ever involved.
     """
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, api_token: str):
         self.cfg = cfg
-        self.exchange = make_exchange(cfg.exchange)
+        self.client = make_client(cfg.environment, api_token)
         self.equity = cfg.risk.initial_capital
         self.position: PaperPosition | None = None
         self.closed_trades: list[dict] = []
@@ -37,9 +38,9 @@ class PaperTrader:
     def _fetch_recent(self):
         lookback_bars = max(self.cfg.strategy.slow_ma, self.cfg.strategy.rsi_period) * 3
         return fetch_ohlcv(
-            self.exchange,
-            self.cfg.symbol,
-            self.cfg.timeframe,
+            self.client,
+            self.cfg.instrument,
+            self.cfg.granularity,
             max_bars=lookback_bars,
         )
 
@@ -73,7 +74,7 @@ class PaperTrader:
                         "pnl": pnl,
                     }
                 )
-                logger.info("EXIT (%s) @ %.2f | pnl=%.2f | equity=%.2f", reason, exit_price, pnl, self.equity)
+                logger.info("EXIT (%s) @ %.5f | pnl=%.2f | equity=%.2f", reason, exit_price, pnl, self.equity)
                 self.position = None
 
         elif bool(last["entry_signal"]):
@@ -88,17 +89,19 @@ class PaperTrader:
                     take_profit_price=sizing.take_profit_price,
                 )
                 logger.info(
-                    "ENTRY @ %.2f | qty=%.6f | stop=%.2f | target=%.2f",
+                    "ENTRY @ %.5f | qty=%.2f | stop=%.5f | target=%.5f",
                     price,
                     sizing.quantity,
                     sizing.stop_loss_price,
                     sizing.take_profit_price,
                 )
         else:
-            logger.debug("No signal @ %.2f | equity=%.2f", price, self.equity)
+            logger.debug("No signal @ %.5f | equity=%.2f", price, self.equity)
 
     def run_forever(self) -> None:
-        logger.info("Starting paper trading on %s %s (no real funds are used)", self.cfg.symbol, self.cfg.timeframe)
+        logger.info(
+            "Starting paper trading on %s %s (no real funds are used)", self.cfg.instrument, self.cfg.granularity
+        )
         while True:
             try:
                 self.step()
