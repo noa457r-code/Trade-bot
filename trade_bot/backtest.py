@@ -106,7 +106,7 @@ def run_backtest(df: pd.DataFrame, risk_cfg: RiskConfig) -> BacktestResult:
                 open_trade = None
 
         elif row["entry_signal"]:
-            sizing = size_position(row["close"], equity, risk_cfg)
+            sizing = size_position(row["close"], row["atr"], equity, risk_cfg)
             if sizing.quantity > 0:
                 entry_fee = row["close"] * sizing.quantity * risk_cfg.fee_pct
                 equity -= entry_fee

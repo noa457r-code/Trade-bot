@@ -7,14 +7,16 @@ def make_risk_cfg() -> RiskConfig:
     return RiskConfig(
         initial_capital=10000,
         risk_per_trade=0.01,
-        stop_loss_pct=0.02,
-        take_profit_pct=0.04,
+        stop_loss_atr_mult=2.0,
+        take_profit_atr_mult=4.0,
         fee_pct=0.001,
     )
 
 
 def make_strategy_cfg() -> StrategyConfig:
-    return StrategyConfig(fast_ma=10, slow_ma=30, rsi_period=14, rsi_buy_max=65, rsi_sell_min=35)
+    return StrategyConfig(
+        fast_ma=10, slow_ma=30, rsi_period=14, rsi_buy_max=65, rsi_sell_min=35, atr_period=14
+    )
 
 
 def test_backtest_runs_and_tracks_equity(synthetic_ohlcv):

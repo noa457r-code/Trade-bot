@@ -68,7 +68,7 @@ class PaperTrader:
             return
 
         equity = float(self.trading_client.get_account().equity)
-        sizing = size_position(price, equity, self.cfg.risk)
+        sizing = size_position(price, float(last["atr"]), equity, self.cfg.risk)
         quantity = math.floor(sizing.quantity)
         if quantity < 1:
             logger.debug("Signal but position size < 1 share @ %.2f | equity=%.2f", price, equity)

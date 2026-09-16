@@ -9,13 +9,14 @@ strategy:
   rsi_period: 14
   rsi_buy_max: 65   # RSI muss unter diesem Wert liegen, damit ein Long-Signal bestaetigt wird
   rsi_sell_min: 35  # RSI muss ueber diesem Wert liegen, damit ein Exit-Signal bestaetigt wird
+  atr_period: 14    # Average True Range: misst tatsaechliche Volatilitaet fuer Stop/Target
 
 risk:
   initial_capital: 10000
-  risk_per_trade: 0.01     # 1% des Kapitals pro Trade riskieren
-  stop_loss_pct: 0.02      # 2% Stop-Loss unter Entry
-  take_profit_pct: 0.04    # 4% Take-Profit ueber Entry
-  fee_pct: 0.0002          # Naeherung fuer Transaktionskosten
+  risk_per_trade: 0.01          # 1% des Kapitals pro Trade riskieren
+  stop_loss_atr_mult: 2.0       # Stop-Loss = Entry - 2x ATR (skaliert mit Volatilitaet)
+  take_profit_atr_mult: 4.0     # Take-Profit = Entry + 4x ATR (2:1 Chance-Risiko wie zuvor)
+  fee_pct: 0.0002               # Naeherung fuer Transaktionskosten
 
 paper_trading:
   poll_interval_seconds: 60

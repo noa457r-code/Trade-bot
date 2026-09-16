@@ -13,14 +13,15 @@ class StrategyConfig:
     rsi_period: int
     rsi_buy_max: float
     rsi_sell_min: float
+    atr_period: int
 
 
 @dataclass
 class RiskConfig:
     initial_capital: float
     risk_per_trade: float
-    stop_loss_pct: float
-    take_profit_pct: float
+    stop_loss_atr_mult: float
+    take_profit_atr_mult: float
     fee_pct: float
 
 

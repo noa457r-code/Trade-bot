@@ -12,12 +12,16 @@ class PositionSizing:
     take_profit_price: float
 
 
-def size_position(entry_price: float, equity: float, cfg: RiskConfig) -> PositionSizing:
+def size_position(entry_price: float, atr_value: float, equity: float, cfg: RiskConfig) -> PositionSizing:
     """Size a position so that hitting the stop-loss loses at most
     `risk_per_trade` of current equity.
+
+    Stop-loss/take-profit distances scale with `atr_value` (the
+    instrument's current Average True Range) instead of a fixed
+    percentage, so they adapt to how much the instrument actually moves.
     """
-    stop_loss_price = entry_price * (1 - cfg.stop_loss_pct)
-    take_profit_price = entry_price * (1 + cfg.take_profit_pct)
+    stop_loss_price = entry_price - atr_value * cfg.stop_loss_atr_mult
+    take_profit_price = entry_price + atr_value * cfg.take_profit_atr_mult
 
     risk_amount = equity * cfg.risk_per_trade
     price_risk_per_unit = entry_price - stop_loss_price

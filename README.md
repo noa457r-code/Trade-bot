@@ -66,6 +66,9 @@ die Position vorzeitig über `close_position`. Alles läuft gegen den
   `rsi_sell_min` — zusätzlich greifen Stop-Loss und Take-Profit jederzeit.
 - **Positionsgröße:** so bemessen, dass ein Stop-Loss-Treffer maximal
   `risk_per_trade` des aktuellen Kapitals kostet.
+- **Stop-Loss/Take-Profit:** skalieren mit dem Average True Range (ATR) statt
+  einem festen Prozentsatz — passt sich der tatsächlichen Volatilität des
+  Instruments an (`stop_loss_atr_mult` / `take_profit_atr_mult` in `config.yaml`).
 
 ## Tests
 
