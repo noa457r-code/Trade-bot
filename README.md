@@ -5,9 +5,10 @@ Ein Aktien-Trading-Bot mit Backtesting und Paper-Trading. Strategie: SMA-Crossov
 Datenquelle: [Alpaca](https://alpaca.markets/) Market-Data-API über die Library
 `alpaca-py`.
 
-**Kein Live-Trading in dieser Version.** Backtests laufen auf historischen Kursen,
-Paper-Trading simuliert Trades auf Basis von Live-Kursen, ohne echte Orders zu
-platzieren oder Kapital zu riskieren.
+**Kein Live-Trading in dieser Version.** Backtests laufen auf historischen Kursen.
+Paper-Trading platziert echte Bracket-Orders (Entry + Stop-Loss + Take-Profit)
+auf Alpacas Paper-Trading-Endpoint — sichtbar im Alpaca-Dashboard unter
+Orders/Positions, aber mit virtuellem Kapital, ohne jedes Risiko für echtes Geld.
 
 ## Setup
 
@@ -52,9 +53,10 @@ python -m trade_bot.cli paper --config config.yaml
 ```
 
 Pollt in konfigurierbarem Intervall aktuelle Kursdaten, wendet dieselbe Strategie
-an und simuliert Entries/Exits inkl. Stop-Loss/Take-Profit — alles nur im
-Arbeitsspeicher, keine echten Orders. Benötigt nur die Alpaca-API-Keys, kein
-Kapital involviert.
+an und platziert bei einem Entry-Signal eine Bracket-Order (Market-Entry +
+Stop-Loss + Take-Profit) auf dem Alpaca-Paper-Konto. Ein Exit-Signal schließt
+die Position vorzeitig über `close_position`. Alles läuft gegen den
+`paper`-Endpoint — virtuelles Kapital, kein echtes Geld involviert.
 
 ## Strategie
 
