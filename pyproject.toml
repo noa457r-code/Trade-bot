@@ -1,0 +1,8 @@
+[project]
+name = "trade-bot"
+version = "0.1.0"
+description = "Backtesting and paper-trading crypto trading bot (SMA crossover + RSI filter)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

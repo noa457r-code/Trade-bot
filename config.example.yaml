@@ -1,0 +1,20 @@
+exchange: binance
+symbol: BTC/USDT
+timeframe: 1h
+
+strategy:
+  fast_ma: 20
+  slow_ma: 50
+  rsi_period: 14
+  rsi_buy_max: 65   # RSI muss unter diesem Wert liegen, damit ein Long-Signal bestaetigt wird
+  rsi_sell_min: 35  # RSI muss ueber diesem Wert liegen, damit ein Exit-Signal bestaetigt wird
+
+risk:
+  initial_capital: 10000
+  risk_per_trade: 0.01     # 1% des Kapitals pro Trade riskieren
+  stop_loss_pct: 0.02      # 2% Stop-Loss unter Entry
+  take_profit_pct: 0.04    # 4% Take-Profit ueber Entry
+  fee_pct: 0.001           # 0.1% Taker-Gebuehr pro Trade (Binance Standard)
+
+paper_trading:
+  poll_interval_seconds: 60
