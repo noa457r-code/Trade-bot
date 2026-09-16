@@ -14,20 +14,22 @@ from trade_bot.paper_trader import PaperTrader
 from trade_bot.strategy import generate_signals
 
 
-def _require_api_token() -> str:
-    token = os.environ.get("OANDA_API_TOKEN")
-    if not token:
+def _require_alpaca_credentials() -> tuple[str, str]:
+    api_key = os.environ.get("ALPACA_API_KEY")
+    secret_key = os.environ.get("ALPACA_SECRET_KEY")
+    if not api_key or not secret_key:
         raise SystemExit(
-            "OANDA_API_TOKEN ist nicht gesetzt. Kopiere .env.example nach .env und trage "
-            "deinen (kostenlosen) OANDA-Practice-Account-Token ein."
+            "ALPACA_API_KEY / ALPACA_SECRET_KEY sind nicht gesetzt. Kopiere .env.example "
+            "nach .env und trage deine (kostenlosen) Alpaca-Paper-Account-Keys ein."
         )
-    return token
+    return api_key, secret_key
 
 
 def cmd_backtest(args: argparse.Namespace) -> None:
     load_dotenv()
     cfg = Config.from_yaml(args.config)
-    client = make_client(cfg.environment, _require_api_token())
+    api_key, secret_key = _require_alpaca_credentials()
+    client = make_client(api_key, secret_key)
 
     since = None
     if args.since:
@@ -53,7 +55,8 @@ def cmd_backtest(args: argparse.Namespace) -> None:
 def cmd_paper(args: argparse.Namespace) -> None:
     load_dotenv()
     cfg = Config.from_yaml(args.config)
-    trader = PaperTrader(cfg, api_token=_require_api_token())
+    api_key, secret_key = _require_alpaca_credentials()
+    trader = PaperTrader(cfg, api_key=api_key, secret_key=secret_key)
     trader.run_forever()
 
 

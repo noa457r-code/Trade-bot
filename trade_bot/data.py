@@ -1,100 +1,67 @@
 from __future__ import annotations
 
-import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 import pandas as pd
-from oandapyV20 import API
-from oandapyV20.endpoints.instruments import InstrumentsCandles
+from alpaca.data.historical.stock import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
-GRANULARITY_SECONDS = {
-    "S5": 5, "S10": 10, "S15": 15, "S30": 30,
-    "M1": 60, "M2": 120, "M4": 240, "M5": 300, "M10": 600, "M15": 900, "M30": 1800,
-    "H1": 3600, "H2": 7200, "H3": 10800, "H4": 14400, "H6": 21600, "H8": 28800, "H12": 43200,
-    "D": 86400, "W": 604800,
+GRANULARITY_MAP: dict[str, TimeFrame] = {
+    "M1": TimeFrame(1, TimeFrameUnit.Minute),
+    "M5": TimeFrame(5, TimeFrameUnit.Minute),
+    "M15": TimeFrame(15, TimeFrameUnit.Minute),
+    "M30": TimeFrame(30, TimeFrameUnit.Minute),
+    "H1": TimeFrame(1, TimeFrameUnit.Hour),
+    "H4": TimeFrame(4, TimeFrameUnit.Hour),
+    "D": TimeFrame(1, TimeFrameUnit.Day),
+    "W": TimeFrame(1, TimeFrameUnit.Week),
 }
 
-OANDA_MAX_COUNT = 5000
 
-
-def make_client(environment: str, api_token: str) -> API:
-    return API(access_token=api_token, environment=environment)
-
-
-def _parse_candle_time(raw: str) -> datetime:
-    return datetime.strptime(raw[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+def make_client(api_key: str, secret_key: str) -> StockHistoricalDataClient:
+    return StockHistoricalDataClient(api_key, secret_key)
 
 
 def fetch_ohlcv(
-    client: API,
+    client: StockHistoricalDataClient,
     instrument: str,
     granularity: str,
     since: datetime | None = None,
     max_bars: int | None = None,
 ) -> pd.DataFrame:
-    """Fetch OANDA mid-price candles.
+    """Fetch Alpaca OHLCV bars for a single stock symbol.
 
-    Without `since`, returns the most recent `max_bars` (or 500) completed
-    candles up to now. With `since`, pages forward from that point until
-    caught up (or `max_bars` is reached).
+    Without `since`, returns the most recent `max_bars` (or 500) bars up to
+    now. With `since`, returns bars from that date onward (capped at
+    `max_bars` if given). Alpaca paginates internally, so no manual paging
+    is needed here.
 
     Returns a DataFrame indexed by UTC timestamp with columns
-    open, high, low, close, volume. Still-forming (incomplete) candles are
-    dropped.
+    open, high, low, close, volume.
     """
-    if since is None:
-        count = min(max_bars or 500, OANDA_MAX_COUNT)
-        params = {"granularity": granularity, "price": "M", "count": count}
-        request = InstrumentsCandles(instrument=instrument, params=params)
-        client.request(request)
-        rows = [c for c in request.response["candles"] if c["complete"]]
-    else:
-        rows = []
-        cursor = since
-        step = timedelta(seconds=GRANULARITY_SECONDS[granularity])
+    request = StockBarsRequest(
+        symbol_or_symbols=instrument,
+        timeframe=GRANULARITY_MAP[granularity],
+        start=since,
+        limit=max_bars or (None if since else 500),
+    )
+    bars = client.get_stock_bars(request)
+    df = bars.df
 
-        while True:
-            params = {
-                "granularity": granularity,
-                "price": "M",
-                "count": OANDA_MAX_COUNT,
-                "from": cursor.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            }
-            request = InstrumentsCandles(instrument=instrument, params=params)
-            client.request(request)
-            candles = request.response["candles"]
-            if not candles:
-                break
+    if df.empty:
+        empty = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        empty.index.name = "timestamp"
+        return empty
 
-            rows.extend(c for c in candles if c["complete"])
+    if isinstance(df.index, pd.MultiIndex):
+        df = df.xs(instrument, level=0)
 
-            if len(candles) < OANDA_MAX_COUNT:
-                break
-            if max_bars is not None and len(rows) >= max_bars:
-                break
-
-            next_cursor = _parse_candle_time(candles[-1]["time"]) + step
-            if next_cursor <= cursor:
-                break
-            cursor = next_cursor
-            time.sleep(0.2)
+    df = df[["open", "high", "low", "close", "volume"]].sort_index()
+    df.index = pd.to_datetime(df.index, utc=True)
+    df.index.name = "timestamp"
 
     if max_bars is not None:
-        rows = rows[-max_bars:]
+        df = df.iloc[-max_bars:]
 
-    records = [
-        {
-            "timestamp": c["time"],
-            "open": float(c["mid"]["o"]),
-            "high": float(c["mid"]["h"]),
-            "low": float(c["mid"]["l"]),
-            "close": float(c["mid"]["c"]),
-            "volume": float(c["volume"]),
-        }
-        for c in rows
-    ]
-
-    df = pd.DataFrame(records, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-    df = df.drop_duplicates(subset="timestamp").set_index("timestamp").sort_index()
     return df

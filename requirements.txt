@@ -1,4 +1,4 @@
-oandapyV20>=0.7.2
+alpaca-py>=0.33.0
 pandas>=2.2.0
 numpy>=1.26.0
 PyYAML>=6.0

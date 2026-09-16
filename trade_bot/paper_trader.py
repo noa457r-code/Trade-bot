@@ -23,14 +23,15 @@ class PaperPosition:
 class PaperTrader:
     """Simulates trading on live market data without placing real orders.
 
-    Safe to run continuously: only the OANDA practice API token is needed
-    (candle data is free on both practice and live environments), and no
-    real orders or funds are ever involved.
+    Safe to run continuously: only an Alpaca API key/secret pair is needed
+    (market data access works the same on paper and live accounts), and no
+    real orders or funds are ever involved. Note: stock market data only
+    updates during exchange hours.
     """
 
-    def __init__(self, cfg: Config, api_token: str):
+    def __init__(self, cfg: Config, api_key: str, secret_key: str):
         self.cfg = cfg
-        self.client = make_client(cfg.environment, api_token)
+        self.client = make_client(api_key, secret_key)
         self.equity = cfg.risk.initial_capital
         self.position: PaperPosition | None = None
         self.closed_trades: list[dict] = []
