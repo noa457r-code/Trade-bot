@@ -110,7 +110,8 @@ def cmd_paper(args: argparse.Namespace) -> None:
     load_dotenv()
     cfg = Config.from_yaml(args.config)
     api_key, secret_key = _require_alpaca_credentials()
-    trader = PaperTrader(cfg, api_key=api_key, secret_key=secret_key)
+    discord_webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
+    trader = PaperTrader(cfg, api_key=api_key, secret_key=secret_key, discord_webhook_url=discord_webhook_url)
     trader.run_forever()
 
 

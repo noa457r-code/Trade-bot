@@ -11,6 +11,7 @@ from alpaca.trading.requests import MarketOrderRequest, StopLossRequest, TakePro
 
 from trade_bot.config import Config
 from trade_bot.data import fetch_ohlcv, make_client
+from trade_bot.notify import send_discord_notification
 from trade_bot.risk import size_position
 from trade_bot.strategy import generate_signals
 
@@ -27,10 +28,11 @@ class PaperTrader:
     involved.
     """
 
-    def __init__(self, cfg: Config, api_key: str, secret_key: str):
+    def __init__(self, cfg: Config, api_key: str, secret_key: str, discord_webhook_url: str | None = None):
         self.cfg = cfg
         self.data_client = make_client(api_key, secret_key)
         self.trading_client = TradingClient(api_key, secret_key, paper=True)
+        self.discord_webhook_url = discord_webhook_url
 
     def _fetch_recent(self, instrument: str):
         lookback_bars = max(self.cfg.strategy.slow_ma, self.cfg.strategy.rsi_period) * 3
@@ -59,6 +61,10 @@ class PaperTrader:
             if bool(last["exit_signal"]):
                 self.trading_client.close_position(instrument)
                 logger.info("[%s] EXIT (signal) @ ~%.2f | qty=%s", instrument, price, position.qty)
+                send_discord_notification(
+                    f"EXIT {instrument} @ ~{price:.2f} | qty={position.qty}",
+                    self.discord_webhook_url,
+                )
             else:
                 logger.debug("[%s] Holding qty=%s @ ~%.2f", instrument, position.qty, price)
             return
@@ -90,6 +96,11 @@ class PaperTrader:
         logger.info(
             "[%s] ENTRY @ %.2f | qty=%d | stop=%.2f | target=%.2f",
             instrument, price, quantity, sizing.stop_loss_price, sizing.take_profit_price,
+        )
+        send_discord_notification(
+            f"ENTRY {instrument} @ ~{price:.2f} | qty={quantity} | "
+            f"stop={sizing.stop_loss_price:.2f} | target={sizing.take_profit_price:.2f}",
+            self.discord_webhook_url,
         )
 
     def step(self) -> None:
