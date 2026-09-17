@@ -49,10 +49,11 @@ class PaperTrader:
         except APIError:
             return None
 
-    def step_instrument(self, instrument: str) -> str:
+    def step_instrument(self, instrument: str) -> str | None:
         """Runs one strategy step for `instrument`, returns a one-line status
-        string (e.g. "AAPL: flat @ 230.14") used for the periodic Discord
-        status digest - so that digest doesn't need its own extra API calls.
+        string ONLY if there's something worth reporting in the periodic
+        digest (an open position, or an error) - flat/no-signal instruments
+        return None so the digest stays focused on what matters.
         """
         df = self._fetch_recent(instrument)
         signals = generate_signals(df, self.cfg.strategy)
@@ -75,7 +76,7 @@ class PaperTrader:
 
         if not bool(last["entry_signal"]):
             logger.debug("[%s] No signal @ %.2f", instrument, price)
-            return f"{instrument}: keine Position, Kurs {price:.2f}"
+            return None
 
         # Equity is re-read live before every entry, so risk_per_trade is
         # sized against current account equity across all instruments
@@ -85,7 +86,7 @@ class PaperTrader:
         quantity = math.floor(sizing.quantity)
         if quantity < 1:
             logger.debug("[%s] Signal but position size < 1 share @ %.2f | equity=%.2f", instrument, price, equity)
-            return
+            return None
 
         order = MarketOrderRequest(
             symbol=instrument,
@@ -109,10 +110,16 @@ class PaperTrader:
         return f"{instrument}: ENTRY gerade ausgeloest @ {price:.2f}"
 
     def step(self) -> list[str]:
+        """Runs a step for every instrument, returns only the noteworthy
+        status lines (open positions, entries/exits, errors) - flat/no-signal
+        instruments are omitted so the periodic digest stays short.
+        """
         status_lines = []
         for instrument in self.cfg.instruments:
             try:
-                status_lines.append(self.step_instrument(instrument))
+                line = self.step_instrument(instrument)
+                if line is not None:
+                    status_lines.append(line)
             except Exception:
                 logger.exception("[%s] Error during paper trading step", instrument)
                 status_lines.append(f"{instrument}: FEHLER beim Abfragen (siehe Log)")
@@ -120,7 +127,8 @@ class PaperTrader:
 
     def send_status_digest(self, status_lines: list[str]) -> None:
         equity = float(self.trading_client.get_account().equity)
-        message = f"Status-Update | Kontostand: {equity:.2f}\n" + "\n".join(status_lines)
+        body = "\n".join(status_lines) if status_lines else "keine offenen Positionen, keine Signale"
+        message = f"Status-Update | Kontostand: {equity:.2f}\n{body}"
         send_discord_notification(message, self.discord_webhook_url)
         logger.info("Sent periodic status digest to Discord")
 
