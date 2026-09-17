@@ -52,3 +52,16 @@ def test_no_signals_before_indicators_are_warm(synthetic_ohlcv):
     warmup = max(cfg.slow_ma, cfg.rsi_period) - 1
     assert not signals["entry_signal"].iloc[:warmup].any()
     assert not signals["exit_signal"].iloc[:warmup].any()
+
+
+def test_trend_filter_blocks_entries_below_trend_ma(synthetic_ohlcv):
+    cfg_no_filter = make_cfg()
+    cfg_with_filter = StrategyConfig(**{**vars(cfg_no_filter), "trend_ma": 250})
+
+    baseline = generate_signals(synthetic_ohlcv, cfg_no_filter)
+    filtered = generate_signals(synthetic_ohlcv, cfg_with_filter)
+
+    below_trend = filtered["close"] <= filtered["trend_ma"]
+    assert not (filtered["entry_signal"] & below_trend).any()
+    # The filter should only ever remove entries, never add new ones.
+    assert (filtered["entry_signal"] & ~baseline["entry_signal"]).sum() == 0

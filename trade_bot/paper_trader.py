@@ -32,50 +32,53 @@ class PaperTrader:
         self.data_client = make_client(api_key, secret_key)
         self.trading_client = TradingClient(api_key, secret_key, paper=True)
 
-    def _fetch_recent(self):
+    def _fetch_recent(self, instrument: str):
         lookback_bars = max(self.cfg.strategy.slow_ma, self.cfg.strategy.rsi_period) * 3
         return fetch_ohlcv(
             self.data_client,
-            self.cfg.instrument,
+            instrument,
             self.cfg.granularity,
             max_bars=lookback_bars,
         )
 
-    def _current_position(self):
+    def _current_position(self, instrument: str):
         try:
-            return self.trading_client.get_open_position(self.cfg.instrument)
+            return self.trading_client.get_open_position(instrument)
         except APIError:
             return None
 
-    def step(self) -> None:
-        df = self._fetch_recent()
+    def step_instrument(self, instrument: str) -> None:
+        df = self._fetch_recent(instrument)
         signals = generate_signals(df, self.cfg.strategy)
         last = signals.iloc[-1]
         price = float(last["close"])
 
-        position = self._current_position()
+        position = self._current_position(instrument)
 
         if position is not None:
             if bool(last["exit_signal"]):
-                self.trading_client.close_position(self.cfg.instrument)
-                logger.info("EXIT (signal) @ ~%.2f | qty=%s", price, position.qty)
+                self.trading_client.close_position(instrument)
+                logger.info("[%s] EXIT (signal) @ ~%.2f | qty=%s", instrument, price, position.qty)
             else:
-                logger.debug("Holding qty=%s @ ~%.2f", position.qty, price)
+                logger.debug("[%s] Holding qty=%s @ ~%.2f", instrument, position.qty, price)
             return
 
         if not bool(last["entry_signal"]):
-            logger.debug("No signal @ %.2f", price)
+            logger.debug("[%s] No signal @ %.2f", instrument, price)
             return
 
+        # Equity is re-read live before every entry, so risk_per_trade is
+        # sized against current account equity across all instruments
+        # sharing this one paper account.
         equity = float(self.trading_client.get_account().equity)
         sizing = size_position(price, float(last["atr"]), equity, self.cfg.risk)
         quantity = math.floor(sizing.quantity)
         if quantity < 1:
-            logger.debug("Signal but position size < 1 share @ %.2f | equity=%.2f", price, equity)
+            logger.debug("[%s] Signal but position size < 1 share @ %.2f | equity=%.2f", instrument, price, equity)
             return
 
         order = MarketOrderRequest(
-            symbol=self.cfg.instrument,
+            symbol=instrument,
             qty=quantity,
             side=OrderSide.BUY,
             time_in_force=TimeInForce.DAY,
@@ -85,18 +88,22 @@ class PaperTrader:
         )
         self.trading_client.submit_order(order)
         logger.info(
-            "ENTRY @ %.2f | qty=%d | stop=%.2f | target=%.2f",
-            price, quantity, sizing.stop_loss_price, sizing.take_profit_price,
+            "[%s] ENTRY @ %.2f | qty=%d | stop=%.2f | target=%.2f",
+            instrument, price, quantity, sizing.stop_loss_price, sizing.take_profit_price,
         )
+
+    def step(self) -> None:
+        for instrument in self.cfg.instruments:
+            try:
+                self.step_instrument(instrument)
+            except Exception:
+                logger.exception("[%s] Error during paper trading step", instrument)
 
     def run_forever(self) -> None:
         logger.info(
             "Starting paper trading on %s %s (Alpaca paper account, no real funds)",
-            self.cfg.instrument, self.cfg.granularity,
+            ", ".join(self.cfg.instruments), self.cfg.granularity,
         )
         while True:
-            try:
-                self.step()
-            except Exception:
-                logger.exception("Error during paper trading step")
+            self.step()
             time.sleep(self.cfg.paper_trading.poll_interval_seconds)

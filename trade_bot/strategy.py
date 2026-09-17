@@ -45,6 +45,8 @@ def add_indicators(df: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
     out["slow_ma"] = sma(out["close"], cfg.slow_ma)
     out["rsi"] = rsi(out["close"], cfg.rsi_period)
     out["atr"] = atr(out, cfg.atr_period)
+    if cfg.trend_ma is not None:
+        out["trend_ma"] = sma(out["close"], cfg.trend_ma)
     return out
 
 
@@ -52,7 +54,9 @@ def generate_signals(df: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
     """Moving-average crossover strategy with an RSI confirmation filter.
 
     Long entry: fast MA crosses above slow MA AND RSI is below rsi_buy_max
-                (avoids buying into an already-overbought spike).
+                (avoids buying into an already-overbought spike) AND,
+                if trend_ma is set, close is above trend_ma (only trade
+                with the dominant long-term trend).
     Exit:       fast MA crosses below slow MA AND RSI is above rsi_sell_min
                 (avoids selling into an already-oversold dip).
     """
@@ -66,6 +70,11 @@ def generate_signals(df: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
     out["exit_signal"] = crossed_down & (out["rsi"] > cfg.rsi_sell_min)
 
     valid = out["fast_ma"].notna() & out["slow_ma"].notna() & out["rsi"].notna() & out["atr"].notna()
+
+    if cfg.trend_ma is not None:
+        out["entry_signal"] &= out["close"] > out["trend_ma"]
+        valid &= out["trend_ma"].notna()
+
     out["entry_signal"] &= valid
     out["exit_signal"] &= valid
 

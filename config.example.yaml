@@ -1,6 +1,8 @@
 broker: alpaca
 environment: paper      # paper = Demo-Konto (empfohlen), live = echtes Konto
-instrument: AAPL        # Alpaca-Notation: Ticker-Symbol, kein Slash/Underscore
+instruments:            # Alpaca-Notation: Ticker-Symbole, kein Slash/Underscore. Mehrere = ueber Instrumente streuen.
+  - AAPL
+  - MSFT
 granularity: H1         # Codes: M1,M5,M15,M30,H1,H4,D,W
 
 strategy:
@@ -10,6 +12,7 @@ strategy:
   rsi_buy_max: 65   # RSI muss unter diesem Wert liegen, damit ein Long-Signal bestaetigt wird
   rsi_sell_min: 35  # RSI muss ueber diesem Wert liegen, damit ein Exit-Signal bestaetigt wird
   atr_period: 14    # Average True Range: misst tatsaechliche Volatilitaet fuer Stop/Target
+  trend_ma: 200     # Long-Trendfilter: Long-Entries nur wenn Kurs ueber diesem SMA liegt. null = deaktiviert.
 
 risk:
   initial_capital: 10000

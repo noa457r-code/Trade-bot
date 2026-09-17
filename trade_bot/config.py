@@ -14,6 +14,7 @@ class StrategyConfig:
     rsi_buy_max: float
     rsi_sell_min: float
     atr_period: int
+    trend_ma: int | None = None  # long-term MA; entries only taken above it (uptrend filter). None disables it.
 
 
 @dataclass
@@ -34,7 +35,7 @@ class PaperTradingConfig:
 class Config:
     broker: str
     environment: str
-    instrument: str
+    instruments: list[str]
     granularity: str
     strategy: StrategyConfig
     risk: RiskConfig
@@ -44,10 +45,17 @@ class Config:
     def from_yaml(cls, path: str | Path) -> "Config":
         with open(path, "r") as f:
             raw = yaml.safe_load(f)
+
+        if "instruments" in raw:
+            instruments = list(raw["instruments"])
+        else:
+            # Backward-compat: single `instrument: TICKER` key.
+            instruments = [raw["instrument"]]
+
         return cls(
             broker=raw["broker"],
             environment=raw["environment"],
-            instrument=raw["instrument"],
+            instruments=instruments,
             granularity=raw["granularity"],
             strategy=StrategyConfig(**raw["strategy"]),
             risk=RiskConfig(**raw["risk"]),
