@@ -11,6 +11,16 @@ from trade_bot.strategy import generate_signals
 
 # Parameter grid searched on each in-sample (train) window. Kept moderate in
 # size since it's re-run once per window.
+#
+# trend_ma is deliberately NOT a grid dimension: an earlier experiment let it
+# vary (None/100/150/200) alongside the other params and out-of-sample
+# results got *worse* and noisier (MSFT compounded +4.90% vs. +11.33% with
+# trend_ma fixed at 200 for every window; AAPL flip-flopped between "off" and
+# every tested period almost window to window with no stable pattern). More
+# free parameters == more ways to overfit, even for a parameter motivated by
+# sound trading logic ("trade with the dominant trend"). trend_ma is kept as
+# a fixed structural choice on StrategyConfig instead - set once in
+# config.yaml, not re-fit per window.
 DEFAULT_PARAM_GRID: list[dict] = [
     {"fast_ma": fast, "slow_ma": slow, "rsi_buy_max": rsi_buy,
      "stop_loss_atr_mult": sl_mult, "take_profit_atr_mult": tp_mult}
@@ -80,9 +90,6 @@ def run_walk_forward(
     read on whether the edge holds up on unseen data.
     """
     grid = param_grid if param_grid is not None else DEFAULT_PARAM_GRID
-    warmup_bars = max(base_strategy.slow_ma, base_strategy.rsi_period, base_strategy.atr_period) * 3
-    if base_strategy.trend_ma:
-        warmup_bars = max(warmup_bars, base_strategy.trend_ma * 3)
 
     windows: list[WindowResult] = []
     start = 0
@@ -98,7 +105,11 @@ def run_walk_forward(
 
             # Feed indicators enough lookback from before the test window so
             # they're warm at the test window's first bar, then slice back
-            # down to just the test window for the actual evaluation.
+            # down to just the test window for the actual evaluation. Based
+            # on this window's chosen params (trend_ma can vary per window).
+            warmup_bars = max(strategy_cfg.slow_ma, strategy_cfg.rsi_period, strategy_cfg.atr_period) * 3
+            if strategy_cfg.trend_ma:
+                warmup_bars = max(warmup_bars, strategy_cfg.trend_ma * 3)
             eval_df = df.iloc[max(0, test_start_idx - warmup_bars) : test_start_idx + test_bars]
             eval_signals = generate_signals(eval_df, strategy_cfg)
             eval_signals = eval_signals.loc[test_df.index[0] :]

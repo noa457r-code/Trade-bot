@@ -94,6 +94,7 @@ def cmd_walkforward(args: argparse.Namespace) -> None:
             print(
                 f"  train {w.train_start.date()}..{w.train_end.date()} "
                 f"(fast={w.strategy_cfg.fast_ma} slow={w.strategy_cfg.slow_ma} "
+                f"trend={w.strategy_cfg.trend_ma or 'off'} "
                 f"sl={w.risk_cfg.stop_loss_atr_mult}x tp={w.risk_cfg.take_profit_atr_mult}x, "
                 f"in-sample {w.train_result.total_return_pct:+.2f}%) "
                 f"-> test {w.test_start.date()}..{w.test_end.date()} "
