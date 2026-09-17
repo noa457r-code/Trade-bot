@@ -83,6 +83,12 @@ Alpaca-Paper-Konto. Ein Exit-Signal schließt die Position vorzeitig über
 stoppt die anderen nicht. Alles läuft gegen den `paper`-Endpoint — virtuelles
 Kapital, kein echtes Geld involviert.
 
+**Discord-Benachrichtigungen (optional):** `DISCORD_WEBHOOK_URL` in `.env`
+setzen. Bei jedem ENTRY/EXIT kommt sofort eine Nachricht. Zusätzlich alle
+`paper_trading.status_update_minutes` (Default 60, `0` = aus) ein
+Status-Digest mit Kontostand und Zustand jedes Instruments — auch wenn gerade
+nichts passiert, damit sichtbar bleibt, dass der Bot noch läuft.
+
 **Dauerhaft im Hintergrund laufen lassen:** systemd-User-Service-Beispiel liegt
 unter `~/.config/systemd/user/trade-bot-paper.service` (nicht Teil dieses
 Repos, maschinenspezifisch) — `Restart=always` holt den Bot nach Abstürzen

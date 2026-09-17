@@ -23,3 +23,4 @@ risk:
 
 paper_trading:
   poll_interval_seconds: 60
+  status_update_minutes: 60     # periodisches Discord-Status-Update (Kontostand + Positionen). 0 = aus.

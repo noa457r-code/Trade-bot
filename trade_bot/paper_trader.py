@@ -49,7 +49,11 @@ class PaperTrader:
         except APIError:
             return None
 
-    def step_instrument(self, instrument: str) -> None:
+    def step_instrument(self, instrument: str) -> str:
+        """Runs one strategy step for `instrument`, returns a one-line status
+        string (e.g. "AAPL: flat @ 230.14") used for the periodic Discord
+        status digest - so that digest doesn't need its own extra API calls.
+        """
         df = self._fetch_recent(instrument)
         signals = generate_signals(df, self.cfg.strategy)
         last = signals.iloc[-1]
@@ -65,13 +69,13 @@ class PaperTrader:
                     f"EXIT {instrument} @ ~{price:.2f} | qty={position.qty}",
                     self.discord_webhook_url,
                 )
-            else:
-                logger.debug("[%s] Holding qty=%s @ ~%.2f", instrument, position.qty, price)
-            return
+                return f"{instrument}: EXIT gerade ausgeloest @ {price:.2f}"
+            logger.debug("[%s] Holding qty=%s @ ~%.2f", instrument, position.qty, price)
+            return f"{instrument}: haelt qty={position.qty} @ {price:.2f}"
 
         if not bool(last["entry_signal"]):
             logger.debug("[%s] No signal @ %.2f", instrument, price)
-            return
+            return f"{instrument}: keine Position, Kurs {price:.2f}"
 
         # Equity is re-read live before every entry, so risk_per_trade is
         # sized against current account equity across all instruments
@@ -102,19 +106,40 @@ class PaperTrader:
             f"stop={sizing.stop_loss_price:.2f} | target={sizing.take_profit_price:.2f}",
             self.discord_webhook_url,
         )
+        return f"{instrument}: ENTRY gerade ausgeloest @ {price:.2f}"
 
-    def step(self) -> None:
+    def step(self) -> list[str]:
+        status_lines = []
         for instrument in self.cfg.instruments:
             try:
-                self.step_instrument(instrument)
+                status_lines.append(self.step_instrument(instrument))
             except Exception:
                 logger.exception("[%s] Error during paper trading step", instrument)
+                status_lines.append(f"{instrument}: FEHLER beim Abfragen (siehe Log)")
+        return status_lines
+
+    def send_status_digest(self, status_lines: list[str]) -> None:
+        equity = float(self.trading_client.get_account().equity)
+        message = f"Status-Update | Kontostand: {equity:.2f}\n" + "\n".join(status_lines)
+        send_discord_notification(message, self.discord_webhook_url)
+        logger.info("Sent periodic status digest to Discord")
 
     def run_forever(self) -> None:
         logger.info(
             "Starting paper trading on %s %s (Alpaca paper account, no real funds)",
             ", ".join(self.cfg.instruments), self.cfg.granularity,
         )
+        status_interval = self.cfg.paper_trading.status_update_minutes * 60
+        last_status_at = time.monotonic()
         while True:
-            self.step()
+            status_lines = self.step()
+
+            now = time.monotonic()
+            if status_interval > 0 and now - last_status_at >= status_interval:
+                try:
+                    self.send_status_digest(status_lines)
+                except Exception:
+                    logger.exception("Failed to send periodic status digest")
+                last_status_at = now
+
             time.sleep(self.cfg.paper_trading.poll_interval_seconds)

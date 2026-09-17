@@ -29,6 +29,7 @@ class RiskConfig:
 @dataclass
 class PaperTradingConfig:
     poll_interval_seconds: int
+    status_update_minutes: int = 60  # periodic Discord status digest, independent of poll interval. 0 disables it.
 
 
 @dataclass
