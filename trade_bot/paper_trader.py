@@ -7,8 +7,9 @@ import time
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
-from alpaca.trading.requests import MarketOrderRequest, StopLossRequest, TakeProfitRequest
+from alpaca.trading.requests import GetPortfolioHistoryRequest, MarketOrderRequest, StopLossRequest, TakeProfitRequest
 
+from trade_bot.advisor import equity_based_tips, error_based_tips
 from trade_bot.config import Config
 from trade_bot.data import fetch_ohlcv, make_client
 from trade_bot.notify import send_discord_notification
@@ -33,6 +34,7 @@ class PaperTrader:
         self.data_client = make_client(api_key, secret_key)
         self.trading_client = TradingClient(api_key, secret_key, paper=True)
         self.discord_webhook_url = discord_webhook_url
+        self._error_streaks: dict[str, int] = {}
 
     def _fetch_recent(self, instrument: str):
         lookback_bars = max(self.cfg.strategy.slow_ma, self.cfg.strategy.rsi_period) * 3
@@ -120,15 +122,35 @@ class PaperTrader:
                 line = self.step_instrument(instrument)
                 if line is not None:
                     status_lines.append(line)
+                self._error_streaks[instrument] = 0
             except Exception:
                 logger.exception("[%s] Error during paper trading step", instrument)
                 status_lines.append(f"{instrument}: FEHLER beim Abfragen (siehe Log)")
+                self._error_streaks[instrument] = self._error_streaks.get(instrument, 0) + 1
         return status_lines
+
+    def _fetch_tips(self) -> list[str]:
+        """Rule-based tips from real account state - only returns something
+        when a threshold actually triggers (see trade_bot.advisor)."""
+        tips = error_based_tips(self._error_streaks)
+        try:
+            history = self.trading_client.get_portfolio_history(
+                GetPortfolioHistoryRequest(period="1M", timeframe="1D")
+            )
+            tips += equity_based_tips(list(history.equity), history.base_value)
+        except Exception:
+            logger.exception("Failed to fetch portfolio history for tips")
+        return tips
 
     def send_status_digest(self, status_lines: list[str]) -> None:
         equity = float(self.trading_client.get_account().equity)
         body = "\n".join(status_lines) if status_lines else "keine offenen Positionen, keine Signale"
         message = f"Status-Update | Kontostand: {equity:.2f}\n{body}"
+
+        tips = self._fetch_tips()
+        if tips:
+            message += "\n\nTipps:\n" + "\n".join(f"- {t}" for t in tips)
+
         send_discord_notification(message, self.discord_webhook_url)
         logger.info("Sent periodic status digest to Discord")
 
