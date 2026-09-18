@@ -20,6 +20,9 @@ risk:
   stop_loss_atr_mult: 2.0       # Stop-Loss = Entry - 2x ATR (skaliert mit Volatilitaet)
   take_profit_atr_mult: 4.0     # Take-Profit = Entry + 4x ATR (2:1 Chance-Risiko wie zuvor)
   fee_pct: 0.0002               # Naeherung fuer Transaktionskosten
+  max_open_positions: 2         # Bot lehnt neue Entries ab, wenn schon so viele Positionen offen sind
+  kill_switch_drawdown_pct: 10  # Bot stoppt komplett + schliesst alle Positionen bei -10% vom Hoch (manueller Reset noetig)
+  breakeven_trigger_atr_mult: 1.0  # Sobald Trade um 1x ATR im Plus liegt, Stop auf Einstiegspreis nachziehen (kein Verlust mehr moeglich)
 
 paper_trading:
   poll_interval_seconds: 60

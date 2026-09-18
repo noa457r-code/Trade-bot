@@ -84,7 +84,11 @@ stoppt die anderen nicht. Alles läuft gegen den `paper`-Endpoint — virtuelles
 Kapital, kein echtes Geld involviert.
 
 **Discord-Benachrichtigungen (optional):** `DISCORD_WEBHOOK_URL` in `.env`
-setzen. Bei jedem ENTRY/EXIT kommt sofort eine Nachricht. Zusätzlich alle
+setzen. Bei jedem ENTRY kommt sofort eine Nachricht. Sobald eine Position
+schließt — egal ob per Strategie-Signal, Take-Profit-Fill, Stop-Loss-Fill
+oder Break-Even-Fill — meldet der Bot den realisierten Gewinn/Verlust (P&L)
+in Dollar, erkannt anhand des zuletzt bekannten Einstiegspreises gegen den
+tatsächlichen Fill-Preis der schließenden Order. Zusätzlich alle
 `paper_trading.status_update_minutes` (Default 60, `0` = aus) ein
 Status-Digest mit Kontostand und Zustand jedes Instruments — auch wenn gerade
 nichts passiert, damit sichtbar bleibt, dass der Bot noch läuft.
@@ -95,6 +99,29 @@ Repos, maschinenspezifisch) — `Restart=always` holt den Bot nach Abstürzen
 automatisch zurück, `WantedBy=default.target` + `enable` startet ihn nach
 Login/Reboot neu. Verwalten über `systemctl --user status/stop/restart
 trade-bot-paper`.
+
+**Sicherheitssystem:**
+
+- **Positions-Limit** (`risk.max_open_positions`): Bot lehnt neue Entries ab,
+  sobald schon so viele Positionen gleichzeitig offen sind — kein Crash, nur
+  Log-Zeile + Discord-Meldung.
+- **Kill-Switch** (`risk.kill_switch_drawdown_pct`): fällt das Konto um diesen
+  Prozentsatz vom bisherigen Hoch, schließt der Bot sofort alle offenen
+  Positionen und stoppt komplett — kein neuer Trade mehr, egal welches
+  Signal kommt. Zustand liegt in `safety_state.json` (Peak-Equity +
+  Killed-Flag), übersteht daher auch einen Neustart durch systemd. Reset nur
+  manuell:
+  ```bash
+  python -m trade_bot.cli reset-killswitch --state-file safety_state.json
+  ```
+  Setzt nur das Killed-Flag zurück, die Peak-Equity bleibt erhalten (kein
+  frischer Drawdown-Zähler von einem niedrigeren Stand aus).
+- **Break-Even-Stop** (`risk.breakeven_trigger_atr_mult`): sobald ein offener
+  Trade um diesen Faktor mal ATR im Plus liegt, zieht der Bot den Stop-Loss
+  der Bracket-Order auf den Einstiegspreis nach — der Trade kann danach nicht
+  mehr mit Verlust schließen, Take-Profit bleibt unverändert bestehen. Läuft
+  über Alpacas `replace_order_by_id` auf die Stop-Leg-Order, passiert höchstens
+  einmal pro offener Position.
 
 ## Strategie
 

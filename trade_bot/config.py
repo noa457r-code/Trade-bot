@@ -24,6 +24,9 @@ class RiskConfig:
     stop_loss_atr_mult: float
     take_profit_atr_mult: float
     fee_pct: float
+    max_open_positions: int = 999  # hard cap on simultaneously open positions across all instruments
+    kill_switch_drawdown_pct: float = 10.0  # bot stops trading + closes positions past this drawdown from peak equity
+    breakeven_trigger_atr_mult: float = 1.0  # once unrealized profit reaches this many ATR, stop moves to entry price
 
 
 @dataclass

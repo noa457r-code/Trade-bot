@@ -11,6 +11,7 @@ from trade_bot.backtest import run_backtest
 from trade_bot.config import Config
 from trade_bot.data import fetch_ohlcv, make_client
 from trade_bot.paper_trader import PaperTrader
+from trade_bot.safety import reset_kill_switch
 from trade_bot.strategy import generate_signals
 from trade_bot.walkforward import compounded_out_of_sample_return_pct, run_walk_forward
 
@@ -111,8 +112,16 @@ def cmd_paper(args: argparse.Namespace) -> None:
     cfg = Config.from_yaml(args.config)
     api_key, secret_key = _require_alpaca_credentials()
     discord_webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
-    trader = PaperTrader(cfg, api_key=api_key, secret_key=secret_key, discord_webhook_url=discord_webhook_url)
+    trader = PaperTrader(
+        cfg, api_key=api_key, secret_key=secret_key,
+        discord_webhook_url=discord_webhook_url, safety_state_path=args.state_file,
+    )
     trader.run_forever()
+
+
+def cmd_reset_killswitch(args: argparse.Namespace) -> None:
+    state = reset_kill_switch(args.state_file)
+    print(f"Kill-Switch zurueckgesetzt. Peak-Equity bleibt bei {state.peak_equity:.2f}. Bot handelt beim naechsten Step wieder normal.")
 
 
 def main() -> None:
@@ -130,6 +139,7 @@ def main() -> None:
 
     paper_parser = subparsers.add_parser("paper", help="Run continuous paper trading (no real funds)")
     paper_parser.add_argument("--config", default="config.yaml")
+    paper_parser.add_argument("--state-file", default="safety_state.json")
     paper_parser.set_defaults(func=cmd_paper)
 
     wf_parser = subparsers.add_parser(
@@ -142,6 +152,12 @@ def main() -> None:
     wf_parser.add_argument("--test-bars", type=int, default=500, help="Bars per out-of-sample test window")
     wf_parser.add_argument("--step-bars", type=int, default=500, help="Bars to roll forward between windows")
     wf_parser.set_defaults(func=cmd_walkforward)
+
+    reset_parser = subparsers.add_parser(
+        "reset-killswitch", help="Kill-Switch zuruecksetzen, Bot handelt wieder (Peak-Equity bleibt erhalten)"
+    )
+    reset_parser.add_argument("--state-file", default="safety_state.json")
+    reset_parser.set_defaults(func=cmd_reset_killswitch)
 
     args = parser.parse_args()
     args.func(args)
