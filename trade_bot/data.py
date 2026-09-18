@@ -80,14 +80,24 @@ def fetch_ohlcv(
     open, high, low, close, volume.
     """
     start = since
+    request_limit = max_bars
+    trim_to = max_bars
+
     if start is None:
+        # Alpaca returns bars chronologically FORWARD from `start` up to
+        # `limit` bars, not the most recent `limit` bars ending at now - so
+        # capping the request here would return the OLDEST bars in the
+        # estimated range instead of the newest. Fetch the whole range
+        # instead and trim to the true most-recent bars ourselves below.
         start = _default_start_for_bar_count(granularity, max_bars or 500)
+        request_limit = None
+        trim_to = max_bars or 500
 
     request = StockBarsRequest(
         symbol_or_symbols=instrument,
         timeframe=GRANULARITY_MAP[granularity],
         start=start,
-        limit=max_bars or (None if since else 500),
+        limit=request_limit,
     )
     bars = client.get_stock_bars(request)
     df = bars.df
@@ -104,8 +114,8 @@ def fetch_ohlcv(
     df.index = pd.to_datetime(df.index, utc=True)
     df.index.name = "timestamp"
 
-    if max_bars is not None:
-        df = df.iloc[-max_bars:]
+    if trim_to is not None:
+        df = df.iloc[-trim_to:]
 
     return df
 
@@ -122,14 +132,21 @@ def fetch_crypto_ohlcv(
     type and trades 24/7 (no weekend/holiday gaps to account for).
     """
     start = since
+    request_limit = max_bars
+    trim_to = max_bars
+
     if start is None:
+        # See fetch_ohlcv: capping `limit` from a computed default `start`
+        # returns the OLDEST bars in that range, not the most recent ones.
         start = _default_start_for_crypto_bar_count(granularity, max_bars or 500)
+        request_limit = None
+        trim_to = max_bars or 500
 
     request = CryptoBarsRequest(
         symbol_or_symbols=instrument,
         timeframe=GRANULARITY_MAP[granularity],
         start=start,
-        limit=max_bars or (None if since else 500),
+        limit=request_limit,
     )
     bars = client.get_crypto_bars(request)
     df = bars.df
@@ -146,7 +163,7 @@ def fetch_crypto_ohlcv(
     df.index = pd.to_datetime(df.index, utc=True)
     df.index.name = "timestamp"
 
-    if max_bars is not None:
-        df = df.iloc[-max_bars:]
+    if trim_to is not None:
+        df = df.iloc[-trim_to:]
 
     return df
