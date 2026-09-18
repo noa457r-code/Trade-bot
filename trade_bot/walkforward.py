@@ -56,7 +56,7 @@ def _is_int_period_type(hint: Any) -> bool:
     return int in args and type(None) in args  # covers `int | None`
 
 
-def _warmup_bars(strategy_cfg: Any) -> int:
+def warmup_bars(strategy_cfg: Any) -> int:
     """How many bars of lookback a strategy's indicators need to warm up,
     generalized across strategy config types: the largest field TYPED as an
     int "period" (or `int | None`), times 3. Works for `StrategyConfig`
@@ -143,8 +143,8 @@ def run_walk_forward(
             # they're warm at the test window's first bar, then slice back
             # down to just the test window for the actual evaluation. Based
             # on this window's chosen params (can vary per window).
-            warmup_bars = _warmup_bars(strategy_cfg)
-            eval_df = df.iloc[max(0, test_start_idx - warmup_bars) : test_start_idx + test_bars]
+            bars_needed = warmup_bars(strategy_cfg)
+            eval_df = df.iloc[max(0, test_start_idx - bars_needed) : test_start_idx + test_bars]
             eval_signals = generate_signals_fn(eval_df, strategy_cfg)
             eval_signals = eval_signals.loc[test_df.index[0] :]
             test_result = run_backtest(eval_signals, risk_cfg)

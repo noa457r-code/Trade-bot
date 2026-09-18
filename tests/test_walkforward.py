@@ -4,7 +4,7 @@ from trade_bot.config import RiskConfig, StrategyConfig
 from trade_bot.strategy import generate_signals
 from trade_bot.turtle_strategy import TurtleConfig
 from trade_bot.turtle_strategy import generate_signals as generate_turtle_signals
-from trade_bot.walkforward import _warmup_bars, run_walk_forward
+from trade_bot.walkforward import warmup_bars, run_walk_forward
 
 
 def _risk_cfg() -> RiskConfig:
@@ -45,14 +45,14 @@ def test_warmup_bars_uses_largest_int_period_field_times_three():
     strategy_cfg = StrategyConfig(
         fast_ma=10, slow_ma=50, rsi_period=14, rsi_buy_max=75, rsi_sell_min=35, atr_period=14, trend_ma=200,
     )
-    assert _warmup_bars(strategy_cfg) == 200 * 3
+    assert warmup_bars(strategy_cfg) == 200 * 3
 
 
 def test_warmup_bars_ignores_none_fields():
     strategy_cfg = StrategyConfig(
         fast_ma=10, slow_ma=50, rsi_period=14, rsi_buy_max=75.0, rsi_sell_min=35.0, atr_period=14, trend_ma=None,
     )
-    assert _warmup_bars(strategy_cfg) == 50 * 3
+    assert warmup_bars(strategy_cfg) == 50 * 3
 
 
 def test_warmup_bars_ignores_float_fields_even_when_yaml_parses_them_as_int():
@@ -61,9 +61,9 @@ def test_warmup_bars_ignores_float_fields_even_when_yaml_parses_them_as_int():
     strategy_cfg = StrategyConfig(
         fast_ma=10, slow_ma=20, rsi_period=14, rsi_buy_max=75, rsi_sell_min=35, atr_period=14, trend_ma=None,
     )
-    assert _warmup_bars(strategy_cfg) == 20 * 3
+    assert warmup_bars(strategy_cfg) == 20 * 3
 
 
 def test_warmup_bars_works_for_turtle_config():
     turtle_cfg = TurtleConfig(entry_channel=55, exit_channel=20, atr_period=14)
-    assert _warmup_bars(turtle_cfg) == 55 * 3
+    assert warmup_bars(turtle_cfg) == 55 * 3

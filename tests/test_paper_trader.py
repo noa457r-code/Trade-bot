@@ -271,6 +271,21 @@ def test_reports_realized_loss_when_position_closes_between_steps(trader):
     assert "-50.00" in notify.call_args[0][0]
 
 
+def test_fetch_recent_lookback_accounts_for_trend_ma(trader):
+    # Regression test: _fetch_recent used to compute lookback only from
+    # slow_ma/rsi_period, ignoring trend_ma entirely. With trend_ma=200 that
+    # meant fewer than 200 bars were ever fetched, so trend_ma stayed NaN
+    # forever and entry_signal could never fire - Jef never traded live
+    # because of this.
+    trader.cfg.strategy.trend_ma = 200
+    with patch("trade_bot.paper_trader.fetch_ohlcv") as fetch_mock:
+        fetch_mock.return_value = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        trader._fetch_recent("AAPL")
+
+    max_bars = fetch_mock.call_args.kwargs["max_bars"]
+    assert max_bars >= 200
+
+
 def test_no_close_report_for_position_that_was_never_confirmed_open(trader):
     # get_open_position always raises APIError (default fixture behaviour) -
     # this instrument was never tracked as open, so a still-None position

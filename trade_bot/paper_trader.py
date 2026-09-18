@@ -24,6 +24,7 @@ from trade_bot.notify import send_discord_notification
 from trade_bot.risk import size_position
 from trade_bot.safety import SafetyState, check_kill_switch, is_position_limit_reached
 from trade_bot.strategy import generate_signals
+from trade_bot.walkforward import warmup_bars
 
 logger = logging.getLogger("paper_trader")
 
@@ -57,7 +58,7 @@ class PaperTrader:
         self._open_positions_seen: dict[str, tuple[float, float]] = {}
 
     def _fetch_recent(self, instrument: str):
-        lookback_bars = max(self.cfg.strategy.slow_ma, self.cfg.strategy.rsi_period) * 3
+        lookback_bars = warmup_bars(self.cfg.strategy)
         return fetch_ohlcv(
             self.data_client,
             instrument,
