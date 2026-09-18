@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import dataclasses
 import itertools
 from dataclasses import dataclass, replace
+from typing import Any, Callable, get_args, get_type_hints
 
 import pandas as pd
 
 from trade_bot.backtest import BacktestResult, run_backtest
 from trade_bot.config import RiskConfig, StrategyConfig
 from trade_bot.strategy import generate_signals
+
+GenerateSignalsFn = Callable[[pd.DataFrame, Any], pd.DataFrame]
 
 # Parameter grid searched on each in-sample (train) window. Kept moderate in
 # size since it's re-run once per window.
@@ -39,27 +43,58 @@ class WindowResult:
     train_end: pd.Timestamp
     test_start: pd.Timestamp
     test_end: pd.Timestamp
-    strategy_cfg: StrategyConfig
+    strategy_cfg: Any
     risk_cfg: RiskConfig
     train_result: BacktestResult
     test_result: BacktestResult
 
 
+def _is_int_period_type(hint: Any) -> bool:
+    if hint is int:
+        return True
+    args = get_args(hint)
+    return int in args and type(None) in args  # covers `int | None`
+
+
+def _warmup_bars(strategy_cfg: Any) -> int:
+    """How many bars of lookback a strategy's indicators need to warm up,
+    generalized across strategy config types: the largest field TYPED as an
+    int "period" (or `int | None`), times 3. Works for `StrategyConfig`
+    (fast_ma, slow_ma, rsi_period, atr_period, trend_ma) and `TurtleConfig`
+    (entry_channel, exit_channel, atr_period) alike without either strategy
+    needing to know about the other.
+
+    Checks the field's declared TYPE, not the runtime value's type - YAML
+    parses a whole-number config value like `rsi_buy_max: 75` as a plain
+    int even though the field is typed float, which would otherwise get
+    misclassified as a period field here.
+    """
+    hints = get_type_hints(type(strategy_cfg))
+    periods = [
+        getattr(strategy_cfg, f.name)
+        for f in dataclasses.fields(strategy_cfg)
+        if _is_int_period_type(hints.get(f.name)) and getattr(strategy_cfg, f.name) is not None
+    ]
+    return max(periods) * 3 if periods else 0
+
+
 def _best_on_window(
     df: pd.DataFrame,
-    base_strategy: StrategyConfig,
+    base_strategy: Any,
     base_risk: RiskConfig,
     param_grid: list[dict],
     min_trades: int,
-) -> tuple[StrategyConfig, RiskConfig, BacktestResult] | None:
-    best: tuple[StrategyConfig, RiskConfig, BacktestResult] | None = None
+    generate_signals_fn: GenerateSignalsFn,
+) -> tuple[Any, RiskConfig, BacktestResult] | None:
+    strategy_field_names = {f.name for f in dataclasses.fields(base_strategy)}
+    best: tuple[Any, RiskConfig, BacktestResult] | None = None
     for params in param_grid:
-        strategy_fields = {k: v for k, v in params.items() if k in StrategyConfig.__dataclass_fields__}
+        strategy_fields = {k: v for k, v in params.items() if k in strategy_field_names}
         risk_fields = {k: v for k, v in params.items() if k in RiskConfig.__dataclass_fields__}
         strategy_cfg = replace(base_strategy, **strategy_fields)
         risk_cfg = replace(base_risk, **risk_fields)
 
-        signals = generate_signals(df, strategy_cfg)
+        signals = generate_signals_fn(df, strategy_cfg)
         result = run_backtest(signals, risk_cfg)
         closed = [t for t in result.trades if t.exit_price is not None]
         if len(closed) < min_trades:
@@ -72,13 +107,14 @@ def _best_on_window(
 
 def run_walk_forward(
     df: pd.DataFrame,
-    base_strategy: StrategyConfig,
+    base_strategy: Any,
     base_risk: RiskConfig,
     train_bars: int,
     test_bars: int,
     step_bars: int,
     param_grid: list[dict] | None = None,
     min_trades: int = 5,
+    generate_signals_fn: GenerateSignalsFn = generate_signals,
 ) -> list[WindowResult]:
     """Rolling walk-forward validation: on each window, pick the best
     parameters on the train slice (in-sample), then evaluate those exact
@@ -99,19 +135,17 @@ def run_walk_forward(
         test_start_idx = start + train_bars
         test_df = df.iloc[test_start_idx : test_start_idx + test_bars]
 
-        best = _best_on_window(train_df, base_strategy, base_risk, grid, min_trades)
+        best = _best_on_window(train_df, base_strategy, base_risk, grid, min_trades, generate_signals_fn)
         if best is not None:
             strategy_cfg, risk_cfg, train_result = best
 
             # Feed indicators enough lookback from before the test window so
             # they're warm at the test window's first bar, then slice back
             # down to just the test window for the actual evaluation. Based
-            # on this window's chosen params (trend_ma can vary per window).
-            warmup_bars = max(strategy_cfg.slow_ma, strategy_cfg.rsi_period, strategy_cfg.atr_period) * 3
-            if strategy_cfg.trend_ma:
-                warmup_bars = max(warmup_bars, strategy_cfg.trend_ma * 3)
+            # on this window's chosen params (can vary per window).
+            warmup_bars = _warmup_bars(strategy_cfg)
             eval_df = df.iloc[max(0, test_start_idx - warmup_bars) : test_start_idx + test_bars]
-            eval_signals = generate_signals(eval_df, strategy_cfg)
+            eval_signals = generate_signals_fn(eval_df, strategy_cfg)
             eval_signals = eval_signals.loc[test_df.index[0] :]
             test_result = run_backtest(eval_signals, risk_cfg)
 

@@ -47,6 +47,16 @@ Lädt historische Kursdaten von Alpaca, wendet die Strategie an und gibt
 Performance-Kennzahlen aus: Anzahl Trades, Win-Rate, Gesamtrendite, Max
 Drawdown, Endkapital.
 
+**Alternative Strategie zum Vergleich:** `--strategy turtle` (Default:
+`sma_rsi`) nutzt statt der MA-Crossover+RSI-Strategie ein klassisches
+Turtle-Trading-System (Donchian-Breakout, long-only, kein Pyramiding) —
+Entry bei Ausbruch über N-Tage-Hoch (`--turtle-entry-channel`, Default 20),
+Exit bei Ausbruch unter M-Tage-Tief (`--turtle-exit-channel`, Default 10).
+Nur für Backtest-Vergleich gedacht, noch nicht im Live-Paper-Trading oder in
+`walkforward` verfügbar — Zahlen aus einem einzelnen Backtest sind in-sample
+und ohne Walk-Forward-Gegenprobe nicht verlässlich (siehe Abschnitt oben zur
+bestehenden Strategie).
+
 ## Walk-Forward-Validierung ausführen
 
 ```bash
