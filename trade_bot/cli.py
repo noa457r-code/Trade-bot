@@ -9,10 +9,12 @@ from dotenv import load_dotenv
 
 from trade_bot.backtest import run_backtest
 from trade_bot.config import Config, RiskConfig
-from trade_bot.data import fetch_ohlcv, make_client
+from trade_bot.data import fetch_ohlcv, make_client, make_crypto_client
 from trade_bot.momentum_strategy import MomentumConfig, run_momentum_backtest
 from trade_bot.paper_trader import PaperTrader
 from trade_bot.safety import reset_kill_switch
+from trade_bot.scanner import DEFAULT_WATCHLIST, run_scanner
+from trade_bot.web_scanner import run_web_scanner
 from trade_bot.strategy import generate_signals
 from trade_bot.bollinger_strategy import PARAM_GRID as BOLLINGER_PARAM_GRID
 from trade_bot.bollinger_strategy import BollingerConfig
@@ -26,6 +28,21 @@ from trade_bot.turtle_strategy import generate_signals as generate_turtle_signal
 from trade_bot.walkforward import compounded_out_of_sample_return_pct, run_walk_forward
 
 MOMENTUM_DEFAULT_UNIVERSE = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
+
+# 50 liquide US-Large-Caps, 10 Sektoren x 5 - fuer breite Mehrjahres-/
+# Mehrmarkt-Backtests (--instruments), nicht Teil der Live-Config.
+DIVERSIFIED_50_UNIVERSE = [
+    "AAPL", "MSFT", "NVDA", "ORCL", "CSCO",           # Tech
+    "JPM", "BAC", "GS", "MS", "WFC",                  # Financials
+    "JNJ", "UNH", "PFE", "MRK", "ABBV",               # Healthcare
+    "XOM", "CVX", "COP", "SLB", "EOG",                # Energy
+    "AMZN", "HD", "MCD", "NKE", "SBUX",               # Consumer Discretionary
+    "PG", "KO", "PEP", "WMT", "COST",                 # Consumer Staples
+    "BA", "CAT", "GE", "HON", "UPS",                  # Industrials
+    "NEE", "DUK", "SO", "D", "AEP",                   # Utilities
+    "LIN", "APD", "ECL", "SHW", "FCX",                # Materials
+    "GOOGL", "META", "DIS", "VZ", "T",                # Communication Services
+]
 
 STRATEGIES = {
     "sma_rsi": None,  # handled separately below - uses cfg.strategy from config.yaml, not a fixed default
@@ -70,12 +87,22 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     if args.since:
         since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
 
+    # --instruments/--granularity override config.yaml for this run only -
+    # never touches the live paper-trading config.
+    if args.instruments == "diversified50":
+        instruments = DIVERSIFIED_50_UNIVERSE
+    elif args.instruments:
+        instruments = args.instruments.split(",")
+    else:
+        instruments = cfg.instruments
+    granularity = args.granularity or cfg.granularity
+
     # Each instrument is backtested independently against the same starting
     # capital (not a shared portfolio simulation) - this shows per-instrument
     # edge, not combined portfolio equity.
-    returns = []
-    for instrument in cfg.instruments:
-        df = fetch_ohlcv(client, instrument, cfg.granularity, since=since, max_bars=args.bars)
+    results = []
+    for instrument in instruments:
+        df = fetch_ohlcv(client, instrument, granularity, since=since, max_bars=args.bars)
 
         if args.strategy == "sma_rsi":
             signals = generate_signals(df, cfg.strategy)
@@ -83,9 +110,9 @@ def cmd_backtest(args: argparse.Namespace) -> None:
             strategy_cls, generate_signals_fn, _ = STRATEGIES[args.strategy]
             signals = generate_signals_fn(df, strategy_cls())
         result = run_backtest(signals, cfg.risk)
-        returns.append(result.total_return_pct)
+        results.append((instrument, result))
 
-        print(f"Strategy: {args.strategy} | Instrument: {instrument} | Granularity: {cfg.granularity} | Bars: {len(df)}")
+        print(f"Strategy: {args.strategy} | Instrument: {instrument} | Granularity: {granularity} | Bars: {len(df)}")
         print(result.summary())
 
         if args.trades:
@@ -97,9 +124,22 @@ def cmd_backtest(args: argparse.Namespace) -> None:
                 )
         print()
 
-    if len(cfg.instruments) > 1:
-        avg_return = sum(returns) / len(returns)
-        print(f"Average return across {len(cfg.instruments)} instruments: {avg_return:.2f}%")
+    if len(results) > 1:
+        returns = [r.total_return_pct for _, r in results]
+        drawdowns = [r.max_drawdown_pct for _, r in results]
+        win_rates = [r.win_rate_pct for _, r in results]
+        profitable = sum(1 for r in returns if r > 0)
+        best = max(results, key=lambda pair: pair[1].total_return_pct)
+        worst = min(results, key=lambda pair: pair[1].total_return_pct)
+        sorted_returns = sorted(returns)
+        median_return = sorted_returns[len(sorted_returns) // 2]
+
+        print(f"=== Aggregat ueber {len(results)} Instrumente ===")
+        print(f"Durchschnittliche Rendite: {sum(returns) / len(returns):.2f}% | Median: {median_return:.2f}%")
+        print(f"Profitabel: {profitable}/{len(results)} ({profitable / len(results) * 100:.1f}%)")
+        print(f"Durchschnittlicher Max-Drawdown: {sum(drawdowns) / len(drawdowns):.2f}%")
+        print(f"Durchschnittliche Win-Rate: {sum(win_rates) / len(win_rates):.1f}%")
+        print(f"Bester: {best[0]} ({best[1].total_return_pct:+.2f}%) | Schlechtester: {worst[0]} ({worst[1].total_return_pct:+.2f}%)")
 
 
 def cmd_walkforward(args: argparse.Namespace) -> None:
@@ -202,6 +242,26 @@ def cmd_momentum(args: argparse.Namespace) -> None:
             )
 
 
+def cmd_scanner(args: argparse.Namespace) -> None:
+    load_dotenv()
+    cfg = Config.from_yaml(args.config)
+    api_key, secret_key = _require_alpaca_credentials()
+    stock_client = make_client(api_key, secret_key)
+    crypto_client = make_crypto_client(api_key, secret_key)
+
+    watchlist = args.instruments.split(",") if args.instruments else DEFAULT_WATCHLIST
+    if args.web:
+        run_web_scanner(
+            watchlist, cfg.strategy, stock_client, crypto_client,
+            granularity=args.granularity, interval_seconds=args.interval, port=args.port,
+        )
+    else:
+        run_scanner(
+            watchlist, cfg.strategy, stock_client, crypto_client,
+            granularity=args.granularity, interval_seconds=args.interval,
+        )
+
+
 def cmd_paper(args: argparse.Namespace) -> None:
     load_dotenv()
     cfg = Config.from_yaml(args.config)
@@ -232,6 +292,15 @@ def main() -> None:
     backtest_parser.add_argument("--bars", type=int, default=2000)
     backtest_parser.add_argument("--trades", action="store_true", help="Print individual trades")
     backtest_parser.add_argument(
+        "--instruments", default=None,
+        help="Komma-getrennte Ticker-Liste ODER 'diversified50' fuer ein 50-Instrumente-Sektorenset, "
+             "ueberschreibt config.yaml nur fuer diesen Lauf (Live-Trading unberuehrt)",
+    )
+    backtest_parser.add_argument(
+        "--granularity", default=None,
+        help="Ueberschreibt config.yaml nur fuer diesen Lauf, z.B. D fuer Tages-Kerzen",
+    )
+    backtest_parser.add_argument(
         "--strategy", choices=list(STRATEGIES), default="sma_rsi",
         help="sma_rsi = bestehende MA-Crossover+RSI-Strategie, turtle = Donchian-Breakout "
              "(Turtle Trading System 1), macd = MACD-Crossover, bollinger = Bollinger-Band Mean-Reversion",
@@ -253,6 +322,20 @@ def main() -> None:
     momentum_parser.add_argument("--top-k", type=int, default=3)
     momentum_parser.add_argument("--trades", action="store_true", help="Print individual trades")
     momentum_parser.set_defaults(func=cmd_momentum)
+
+    scanner_parser = subparsers.add_parser(
+        "scanner", help="Terminal-Dashboard: rankt eine Watchlist live nach Tagesveraenderung + Signal-Naehe"
+    )
+    scanner_parser.add_argument("--config", default="config.yaml")
+    scanner_parser.add_argument(
+        "--instruments", default=None,
+        help="Komma-getrennte Liste, Default: " + ",".join(DEFAULT_WATCHLIST),
+    )
+    scanner_parser.add_argument("--granularity", default="H1")
+    scanner_parser.add_argument("--interval", type=int, default=60, help="Sekunden zwischen Aktualisierungen")
+    scanner_parser.add_argument("--web", action="store_true", help="Web-Dashboard statt Terminal (Chart + Tabelle)")
+    scanner_parser.add_argument("--port", type=int, default=8080, help="Nur mit --web: Port auf 127.0.0.1")
+    scanner_parser.set_defaults(func=cmd_scanner)
 
     paper_parser = subparsers.add_parser("paper", help="Run continuous paper trading (no real funds)")
     paper_parser.add_argument("--config", default="config.yaml")

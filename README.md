@@ -140,6 +140,37 @@ trade-bot-paper`.
   `adaptive_risk_state.json`, übersteht Neustart. Rührt nicht an
   Kill-Switch/Positions-Limit/Break-Even — die bleiben exakt wie konfiguriert.
 
+## Markt-Scanner (Terminal-Dashboard)
+
+```bash
+python -m trade_bot.cli scanner --config config.yaml
+```
+
+Eigenständiges Tool, unabhängig vom Paper-Trading — rankt eine Watchlist
+(Default: AAPL, MSFT, GLD, UUP, FXE, FXY, SLV, PPLT, BTC/USD) live nach
+Tagesveränderung, zeigt pro Markt zusätzlich RSI/MA-Abstand/Trend-Status als
+Signal-Näherung an die Live-Strategie. Aktualisiert sich alle 60s
+(`--interval`), eigene Liste über `--instruments` (Komma-getrennt).
+
+Bitcoin läuft über Alpacas separaten Krypto-Daten-Client (`BTC/USD`-Notation
+mit Slash erkennt das Tool automatisch) und ist als einziger Markt "rund um
+die Uhr" wirklich live — Aktien/ETFs zeigen ehrlich "geschlossen" an, sobald
+der letzte Bar älter als 90 Minuten ist (keine veralteten NYSE-Kurse als
+aktuell ausgeben).
+
+**Web-Dashboard mit Chart (`--web`):**
+
+```bash
+python -m trade_bot.cli scanner --config config.yaml --web --port 8080
+```
+
+Startet einen lokalen Webserver (Python-Standardbibliothek, keine neue
+Abhängigkeit) — nur auf `127.0.0.1` erreichbar, niemals im Netzwerk sichtbar,
+da der Prozess echte Alpaca-API-Keys hält. Im Browser unter
+`http://127.0.0.1:8080` ein Balkendiagramm (Chart.js) der Tagesveränderung
+pro Markt (blau = Gewinn, rot = Verlust) plus dieselbe Tabelle wie im
+Terminal, aktualisiert sich automatisch alle `--interval` Sekunden.
+
 ## Strategie
 
 - **Entry:** Fast-MA kreuzt Slow-MA von unten nach oben, UND RSI liegt unter

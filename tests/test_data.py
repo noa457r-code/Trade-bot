@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 
-from trade_bot.data import fetch_ohlcv
+from trade_bot.data import fetch_crypto_ohlcv, fetch_ohlcv
 
 
 def _fake_client(captured_requests: list) -> MagicMock:
@@ -61,3 +61,40 @@ def test_without_since_and_without_max_bars_still_reaches_back():
 
     assert captured[0].start is not None
     assert captured[0].start < datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=5)
+
+
+def _fake_crypto_client(captured_requests: list) -> MagicMock:
+    client = MagicMock()
+
+    def get_crypto_bars(request):
+        captured_requests.append(request)
+        result = MagicMock()
+        result.df = pd.DataFrame()
+        return result
+
+    client.get_crypto_bars.side_effect = get_crypto_bars
+    return client
+
+
+def test_crypto_without_since_reaches_back_far_enough_for_max_bars():
+    # Crypto trades 24/7 - no weekend/holiday gaps like stocks, but still
+    # needs an explicit `start` for the same reason fetch_ohlcv does.
+    captured: list = []
+    client = _fake_crypto_client(captured)
+
+    fetch_crypto_ohlcv(client, "BTC/USD", "H1", since=None, max_bars=600)
+
+    request = captured[0]
+    assert request.start is not None
+    # H1 has 24 bars/day for crypto, so 600 bars needs ~25 days, not "today".
+    assert request.start < datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=15)
+
+
+def test_crypto_with_explicit_since_is_used_as_is():
+    captured: list = []
+    client = _fake_crypto_client(captured)
+    since = datetime(2023, 1, 1, tzinfo=timezone.utc)
+
+    fetch_crypto_ohlcv(client, "BTC/USD", "H1", since=since, max_bars=600)
+
+    assert captured[0].start == since.replace(tzinfo=None)
