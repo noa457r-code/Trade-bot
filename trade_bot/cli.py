@@ -31,6 +31,10 @@ STRATEGIES = {
     "sma_rsi": None,  # handled separately below - uses cfg.strategy from config.yaml, not a fixed default
     "turtle": (TurtleConfig, generate_turtle_signals, TURTLE_PARAM_GRID),
     "macd": (MACDConfig, generate_macd_signals, MACD_PARAM_GRID),
+    # trend_ma tested at 200 (mirroring the sma_rsi trend filter) and made
+    # walk-forward results WORSE, not better (AAPL flipped from +4.77% to
+    # -4.52%) - a trend filter blocks exactly the dip-buys mean-reversion
+    # depends on, so it's left disabled here despite helping sma_rsi.
     "bollinger": (BollingerConfig, generate_bollinger_signals, BOLLINGER_PARAM_GRID),
 }
 

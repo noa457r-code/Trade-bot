@@ -13,6 +13,7 @@ class BollingerConfig:
     period: int = 20
     num_std: float = 2.0
     atr_period: int = 14
+    trend_ma: int | None = None  # long-term MA; entries only taken above it (uptrend filter). None disables it.
 
 
 def generate_signals(df: pd.DataFrame, cfg: BollingerConfig) -> pd.DataFrame:
@@ -21,7 +22,10 @@ def generate_signals(df: pd.DataFrame, cfg: BollingerConfig) -> pd.DataFrame:
     price reverts back to the mean, instead of riding a trend.
 
     Long entry: close crosses below the lower band (fresh oversold reading,
-                not just "still below" on every bar after).
+                not just "still below" on every bar after) AND, if trend_ma
+                is set, close is above trend_ma (only buy dips within a
+                broader uptrend, not a falling knife in a real downtrend -
+                same idea validated for the sma_rsi strategy's trend filter).
     Exit:       close crosses back above the middle band (the mean) -
                 the reversion this strategy is betting on has played out.
     """
@@ -41,8 +45,14 @@ def generate_signals(df: pd.DataFrame, cfg: BollingerConfig) -> pd.DataFrame:
     crossed_above_middle = above_middle & ~above_middle.shift(1, fill_value=False)
 
     valid = out["atr"].notna() & middle.notna() & std.notna()
+
     out["entry_signal"] = crossed_below_lower & valid
     out["exit_signal"] = crossed_above_middle & valid
+
+    if cfg.trend_ma is not None:
+        out["trend_ma"] = sma(out["close"], cfg.trend_ma)
+        out["entry_signal"] &= out["close"] > out["trend_ma"]
+        out["entry_signal"] &= out["trend_ma"].notna()
 
     return out
 
