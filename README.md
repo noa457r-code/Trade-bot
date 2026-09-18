@@ -132,6 +132,13 @@ trade-bot-paper`.
   mehr mit Verlust schließen, Take-Profit bleibt unverändert bestehen. Läuft
   über Alpacas `replace_order_by_id` auf die Stop-Leg-Order, passiert höchstens
   einmal pro offener Position.
+- **Adaptives Risiko-Sizing** (`trade_bot/adaptive_risk.py`): passt NICHT die
+  Strategie selbst an, nur wie viel pro Trade riskiert wird. Nach 2 Verlusten
+  in Folge sinkt der effektive `risk_per_trade` auf 75% (Boden: 25% vom
+  konfigurierten Wert), nach 2 Gewinnen in Folge steigt er wieder um 25% —
+  aber nie über den in `config.yaml` eingestellten Wert hinaus. Zustand in
+  `adaptive_risk_state.json`, übersteht Neustart. Rührt nicht an
+  Kill-Switch/Positions-Limit/Break-Even — die bleiben exakt wie konfiguriert.
 
 ## Strategie
 

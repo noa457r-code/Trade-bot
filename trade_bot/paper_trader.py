@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import time
+from dataclasses import replace
 
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
@@ -17,6 +18,7 @@ from alpaca.trading.requests import (
     TakeProfitRequest,
 )
 
+from trade_bot.adaptive_risk import AdaptiveRiskState, adjust_multiplier, record_trade_outcome
 from trade_bot.advisor import equity_based_tips, error_based_tips
 from trade_bot.config import Config
 from trade_bot.data import fetch_ohlcv, make_client
@@ -46,6 +48,7 @@ class PaperTrader:
         secret_key: str,
         discord_webhook_url: str | None = None,
         safety_state_path: str = "safety_state.json",
+        adaptive_risk_state_path: str = "adaptive_risk_state.json",
     ):
         self.cfg = cfg
         self.data_client = make_client(api_key, secret_key)
@@ -53,6 +56,8 @@ class PaperTrader:
         self.discord_webhook_url = discord_webhook_url
         self.safety_state_path = safety_state_path
         self.safety_state = SafetyState.load(safety_state_path)
+        self.adaptive_risk_state_path = adaptive_risk_state_path
+        self.adaptive_risk_state = AdaptiveRiskState.load(adaptive_risk_state_path)
         self._error_streaks: dict[str, int] = {}
         self._breakeven_moved: dict[str, bool] = {}
         self._open_positions_seen: dict[str, tuple[float, float]] = {}
@@ -146,6 +151,20 @@ class PaperTrader:
         logger.info("[%s] Position geschlossen @ %.2f | P&L=%+.2f", instrument, exit_price, pnl)
         message = f"{instrument}: Position geschlossen @ {exit_price:.2f} | realisierter P&L: {pnl:+.2f}"
         send_discord_notification(message, self.discord_webhook_url)
+
+        record_trade_outcome(self.adaptive_risk_state, pnl)
+        if adjust_multiplier(self.adaptive_risk_state):
+            direction = "reduziert" if pnl < 0 else "erhoeht"
+            logger.info(
+                "Adaptive Risiko-Sizing %s auf %.1f%% des konfigurierten risk_per_trade",
+                direction, self.adaptive_risk_state.current_multiplier * 100,
+            )
+            send_discord_notification(
+                f"Risiko-Sizing {direction} auf {self.adaptive_risk_state.current_multiplier * 100:.0f}% "
+                f"des konfigurierten Werts (2 {'Verluste' if pnl < 0 else 'Gewinne'} in Folge)",
+                self.discord_webhook_url,
+            )
+        self.adaptive_risk_state.save(self.adaptive_risk_state_path)
         return message
 
     def step_instrument(self, instrument: str, open_position_count: int) -> tuple[str | None, bool]:
@@ -204,7 +223,14 @@ class PaperTrader:
         # sized against current account equity across all instruments
         # sharing this one paper account.
         equity = float(self.trading_client.get_account().equity)
-        sizing = size_position(price, float(last["atr"]), equity, self.cfg.risk)
+        # Effective risk scaled by the adaptive multiplier (1.0 = unchanged,
+        # shrinks after loss streaks, recovers after win streaks, never
+        # exceeds the configured risk_per_trade) - only affects position
+        # size, never touches kill-switch/position-limit/breakeven settings.
+        effective_risk = replace(
+            self.cfg.risk, risk_per_trade=self.cfg.risk.risk_per_trade * self.adaptive_risk_state.current_multiplier,
+        )
+        sizing = size_position(price, float(last["atr"]), equity, effective_risk)
         quantity = math.floor(sizing.quantity)
         if quantity < 1:
             logger.debug("[%s] Signal but position size < 1 share @ %.2f | equity=%.2f", instrument, price, equity)

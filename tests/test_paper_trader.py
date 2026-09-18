@@ -7,6 +7,7 @@ import pytest
 from alpaca.common.exceptions import APIError
 from alpaca.trading.enums import OrderSide, OrderType
 
+from trade_bot.adaptive_risk import AdaptiveRiskState
 from trade_bot.config import Config, PaperTradingConfig, RiskConfig, StrategyConfig
 from trade_bot.paper_trader import PaperTrader
 
@@ -72,6 +73,7 @@ def trader(tmp_path):
             api_key="key",
             secret_key="secret",
             safety_state_path=tmp_path / "safety_state.json",
+            adaptive_risk_state_path=tmp_path / "adaptive_risk_state.json",
         )
     t.trading_client = MagicMock()
     t.data_client = MagicMock()
@@ -284,6 +286,73 @@ def test_fetch_recent_lookback_accounts_for_trend_ma(trader):
 
     max_bars = fetch_mock.call_args.kwargs["max_bars"]
     assert max_bars >= 200
+
+
+def _close_position_with_pnl(trader, entry_price: float, exit_price: float, qty: str = "10"):
+    trader.trading_client.get_open_position.side_effect = None
+    trader.trading_client.get_open_position.return_value = _make_position(avg_entry_price=str(entry_price), qty=qty)
+    with patch("trade_bot.paper_trader.generate_signals", return_value=_holding_signal_frame(price=entry_price + 1, atr=5.0)):
+        trader.step_instrument("AAPL", open_position_count=0)
+
+    trader.trading_client.get_open_position.side_effect = APIError("no position")
+    trader.trading_client.get_orders.return_value = [_make_closing_sell_order(filled_avg_price=exit_price)]
+    with patch("trade_bot.paper_trader.generate_signals", return_value=_holding_signal_frame(price=exit_price, atr=5.0)):
+        trader.step_instrument("AAPL", open_position_count=0)
+
+
+def test_two_losses_in_a_row_reduce_effective_risk_for_next_entry(trader):
+    _close_position_with_pnl(trader, entry_price=100.0, exit_price=90.0)   # loss
+    _close_position_with_pnl(trader, entry_price=100.0, exit_price=85.0)   # loss
+
+    assert trader.adaptive_risk_state.current_multiplier == 0.75
+
+    trader.trading_client.get_account.return_value = MagicMock(equity="100000.0")
+    trader.trading_client.get_open_position.side_effect = APIError("no position")
+    with (
+        patch("trade_bot.paper_trader.generate_signals", return_value=_entry_signal_frame()),
+        patch("trade_bot.paper_trader.size_position") as size_mock,
+    ):
+        size_mock.return_value = MagicMock(quantity=1, stop_loss_price=90.0, take_profit_price=110.0)
+        trader.step_instrument("AAPL", open_position_count=0)
+
+    used_risk_cfg = size_mock.call_args[0][3]
+    assert used_risk_cfg.risk_per_trade == trader.cfg.risk.risk_per_trade * 0.75
+
+
+def test_two_wins_recover_multiplier_but_never_exceed_configured_value(trader):
+    trader.adaptive_risk_state.current_multiplier = 0.9  # close to ceiling already
+
+    _close_position_with_pnl(trader, entry_price=100.0, exit_price=110.0)  # win
+    _close_position_with_pnl(trader, entry_price=100.0, exit_price=120.0)  # win
+
+    # 0.9 * 1.25 = 1.125, but must clamp at the configured ceiling (1.0).
+    assert trader.adaptive_risk_state.current_multiplier == 1.0
+
+
+def test_adaptive_risk_state_persists_to_disk(trader):
+    _close_position_with_pnl(trader, entry_price=100.0, exit_price=90.0)
+    _close_position_with_pnl(trader, entry_price=100.0, exit_price=85.0)
+
+    reloaded = AdaptiveRiskState.load(trader.adaptive_risk_state_path)
+    assert reloaded.current_multiplier == 0.75
+
+
+def test_discord_notified_when_multiplier_changes(trader):
+    trader.trading_client.get_open_position.side_effect = None
+    trader.trading_client.get_open_position.return_value = _make_position(avg_entry_price="100.0", qty="10")
+    with patch("trade_bot.paper_trader.generate_signals", return_value=_holding_signal_frame(price=101.0, atr=5.0)):
+        trader.step_instrument("AAPL", open_position_count=0)
+
+    trader.trading_client.get_open_position.side_effect = APIError("no position")
+    trader.trading_client.get_orders.return_value = [_make_closing_sell_order(filled_avg_price=90.0)]
+    with (
+        patch("trade_bot.paper_trader.generate_signals", return_value=_holding_signal_frame(price=90.0, atr=5.0)),
+        patch("trade_bot.paper_trader.send_discord_notification") as notify,
+    ):
+        trader.step_instrument("AAPL", open_position_count=0)
+
+    # Only one loss so far - no adjustment yet, no "Risiko-Sizing" message.
+    assert not any("Risiko-Sizing" in call.args[0] for call in notify.call_args_list)
 
 
 def test_no_close_report_for_position_that_was_never_confirmed_open(trader):

@@ -210,6 +210,7 @@ def cmd_paper(args: argparse.Namespace) -> None:
     trader = PaperTrader(
         cfg, api_key=api_key, secret_key=secret_key,
         discord_webhook_url=discord_webhook_url, safety_state_path=args.state_file,
+        adaptive_risk_state_path=args.adaptive_risk_state_file,
     )
     trader.run_forever()
 
@@ -256,6 +257,7 @@ def main() -> None:
     paper_parser = subparsers.add_parser("paper", help="Run continuous paper trading (no real funds)")
     paper_parser.add_argument("--config", default="config.yaml")
     paper_parser.add_argument("--state-file", default="safety_state.json")
+    paper_parser.add_argument("--adaptive-risk-state-file", default="adaptive_risk_state.json")
     paper_parser.set_defaults(func=cmd_paper)
 
     wf_parser = subparsers.add_parser(

@@ -9,3 +9,4 @@ config.yaml
 data/cache/
 *.log
 safety_state.json
+adaptive_risk_state.json
